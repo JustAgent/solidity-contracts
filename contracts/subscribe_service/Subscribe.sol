@@ -11,7 +11,7 @@ contract Subscribe is Ownable{
     mapping(address => mapping(bytes32 => bool)) userSubscriptions;
     bytes32[] domainsList;
     uint256 public totalDomains;
-    uint256 public currentDomainRegisterPrice = 3000;
+    uint256 public currentDomainRegisterPrice = 3000; //Change
 
     modifier onlyDomainOwner(string memory _domainName) {
         bytes32 domain = keccak256(abi.encodePacked(_domainName));
@@ -19,13 +19,17 @@ contract Subscribe is Ownable{
         _;
     }
 
-    function registerDomain(string memory _domainName) public payable returns(bool) {
-        //require domain doesnt exist
-        //pay for domain registration
-        calculateCurrentDomainRegisterPrice();
+    function registerDomain(string memory _domainName) 
+        public 
+        payable 
+        returns(bool) 
+    {
+        calculateCurrentDomainRegisterPrice(); //To do
         require(msg.value >= currentDomainRegisterPrice, "Not enough funds sent");
-        
+
         bytes32 domainName = keccak256(abi.encodePacked(_domainName));
+        require(!isDomainExists(domainName));
+
         _setDomainOwner(domainName, msg.sender);
         domainsList.push(domainName);
         totalDomains += 1;
@@ -36,12 +40,38 @@ contract Subscribe is Ownable{
         return true;
     }
 
-    function _setDomainOwner(bytes32 _domainName, address _owner) private {
+    function subscribe(string memory _domainName) public {
+        bytes32 domainName = keccak256(abi.encodePacked(_domainName));
+        require(!userSubscriptions[msg.sender][domainName], "You are already subscribed");
+        userSubscriptions[msg.sender][domainName] = true;
+    }
+
+    function _subscribeExpired() private { //TO DO
+        bytes32 domainName = keccak256(abi.encodePacked(_domainName));
+        userSubscriptions[msg.sender][domainName] = false;
+    }
+
+    function _setDomainOwner(bytes32 domainName, address _owner) private {
         require(_owner != address(0), "Zero address");
-        bytes32 domainName = keccak256(_domainName);
         require(domainOwners[domainName] != _owner, "You are already the owner");
 
         domainOwners[domainName] = _owner;
+    }
+
+    function cancelSubscription(string memory _domainName) public {
+        bytes32 domainName = keccak256(abi.encodePacked(_domainName));
+        require(userSubscriptions[msg.sender][domainName]);
+
+
+    }
+
+    function transferDomainOwnership(string memory _domainName, address _newOwner) 
+        public 
+        onlyDomainOwner(_domainName) 
+    {
+        require(msg.sender != _newOwner, "Can not transfer to yourself");
+        bytes32 domainName = keccak256(abi.encodePacked(_domainName));
+        _setDomainOwner(domainName, _newOwner);
     }
 
     function calculateCurrentDomainRegisterPrice() private returns(bool) {
@@ -49,7 +79,7 @@ contract Subscribe is Ownable{
         return true;
     }
 
-    function isDomainExist(bytes32 _domain) private returns(bool) {
+    function isDomainExists(bytes32 _domain) private view returns(bool) {
         for (uint i = 0; i < totalDomains; i++) {
             if (domainsList[i] == _domain) {
                 return true;
