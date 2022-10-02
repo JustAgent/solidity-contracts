@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface WETH is IERC20{
-    function mint(address _address) external;
+    function mint(address _address) external; //For testing
 }
 
 // Using native token (ETH) to create domain
@@ -34,13 +34,15 @@ contract Subscribe is Ownable, ReentrancyGuard{
     uint256 public constant baseDomainRegisterPrice = 5 * 10**16; //0.05 ETH`
     uint256 public currentDomainRegisterPrice = 5 * 10**16; 
     WETH weth;
-    //IERC20 weth = IERC20(0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6); //WETH GOERLI
     address public checkSender;
     modifier onlyDomainOwner(bytes32 _domainName) {
         require(msg.sender == domainOwners[_domainName], "You are not the domain owner");
         _;
     }
 
+    event newSub(bytes32 indexed _domainName, address indexed _user);
+    event newDomain(bytes32 indexed _domainName, address indexed _owner, uint durationDays);
+    event cancelSub(bytes32 indexed _domainName, address indexed _user);
     constructor(address tokenAddress) {
         weth = WETH(tokenAddress);
     }
@@ -50,10 +52,9 @@ contract Subscribe is Ownable, ReentrancyGuard{
         payable 
         returns(bool) 
     {
-        calculateCurrentDomainRegisterPrice(); //To do
+        calculateCurrentDomainRegisterPrice(); 
         require(msg.value >= currentDomainRegisterPrice, "Not enough funds sent");
-
-        require(!isDomainExists(_domainName));
+        require(!isDomainExists(_domainName), "You can not take this domain");
 
         _setDomainOwner(_domainName, msg.sender);
         domainsList.push(_domainName);
@@ -64,26 +65,33 @@ contract Subscribe is Ownable, ReentrancyGuard{
         if (msg.value > currentDomainRegisterPrice) {
             Address.sendValue(payable(msg.sender), msg.value - currentDomainRegisterPrice);
         }
+        emit newDomain(_domainName, msg.sender, _durationDays);
         return true;
     }
     
     function subscribe(bytes32 _domainName) public nonReentrant {
         require(!userSubscriptions[msg.sender][_domainName].isActive, "You are already subscribed");
-        uint256 amount = subscriptionData[_domainName].cost;
-        require(weth.balanceOf(msg.sender) >= amount, "You don't have enough funds");
-        //Realization
-        checkSender = msg.sender;
-        weth.approve(msg.sender, amount);
-        weth.approve(address(this), amount);
-        weth.transferFrom(msg.sender, address(this), amount);
-        
-        //Transfer to owner except fee
-        //Address.sendValue(payable(domainOwners[_domainName]), amount.mul(100 - fee).div(100) );
-        //Give sub   
-        userSubscriptions[msg.sender][_domainName]
-        .expirationTime = block.timestamp + (subscriptionData[_domainName].duration * 1 days);
+        _subscribe(msg.sender, _domainName);
+        emit newSub(_domainName, msg.sender);
+    }
 
-        userSubscriptions[msg.sender][_domainName].isActive= true;
+    function _subscribe(address _user, bytes32 _domainName) private {
+        uint256 amount = subscriptionData[_domainName].cost;
+        require(weth.balanceOf(_user) >= amount, "You don't have enough funds");
+        //Getting payment
+        weth.transferFrom(_user, address(this), amount);
+        
+        //Transfer weth to owner except fee
+        weth.transfer(payable(domainOwners[_domainName]), amount.mul(100 - fee).div(100));
+
+        //Give sub    
+        userSubscriptions[_user][_domainName]
+        .expirationTime = block.timestamp + (subscriptionData[_domainName].duration * 1 days);
+        userSubscriptions[_user][_domainName].isActive= true;
+    }
+
+    function renewSubscription(address _user, bytes32 _domainName) external onlyOwner{
+        _subscribe(_user, _domainName);
     }
 
     function _subscribeRemainingTime(address _user, bytes32 _domainName) external view returns(uint) { 
@@ -98,7 +106,7 @@ contract Subscribe is Ownable, ReentrancyGuard{
         require(userSubscriptions[msg.sender][_domainName].isActive);
         userSubscriptions[msg.sender][_domainName].isActive = false;
         userSubscriptions[msg.sender][_domainName].expirationTime = 0;
-
+        emit cancelSub(_domainName, msg.sender);
     }
 
     function _setDomainOwner(bytes32 _domainName, address _owner) private {
@@ -131,9 +139,10 @@ contract Subscribe is Ownable, ReentrancyGuard{
         return false;
     } 
 
-    function withdraw() external onlyOwner { //Add WETH support
+    function withdraw() external onlyOwner { 
         uint256 balance = address(this).balance;
         Address.sendValue(payable(owner()), balance);
+        weth.transferFrom(address(this), msg.sender, weth.balanceOf(msg.sender));
     }
     
 }
