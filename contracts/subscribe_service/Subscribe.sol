@@ -5,15 +5,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface IERC20 {
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool);
+interface WETH is IERC20{
+    function mint(address _address) external;
 }
 
 // Using native token (ETH) to create domain
@@ -38,12 +33,16 @@ contract Subscribe is Ownable, ReentrancyGuard{
     uint256 public totalDomains;
     uint256 public constant baseDomainRegisterPrice = 5 * 10**16; //0.05 ETH`
     uint256 public currentDomainRegisterPrice = 5 * 10**16; 
-
-    IERC20 weth = IERC20(0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6); //WETH GOERLI
-
+    WETH weth;
+    //IERC20 weth = IERC20(0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6); //WETH GOERLI
+    address public checkSender;
     modifier onlyDomainOwner(bytes32 _domainName) {
         require(msg.sender == domainOwners[_domainName], "You are not the domain owner");
         _;
+    }
+
+    constructor(address tokenAddress) {
+        weth = WETH(tokenAddress);
     }
 
     function registerDomain(bytes32 _domainName, uint256 _cost, uint _durationDays) 
@@ -71,13 +70,15 @@ contract Subscribe is Ownable, ReentrancyGuard{
     function subscribe(bytes32 _domainName) public nonReentrant {
         require(!userSubscriptions[msg.sender][_domainName].isActive, "You are already subscribed");
         uint256 amount = subscriptionData[_domainName].cost;
-        require(msg.sender.balance >= amount, "You don't have enough funds");
+        require(weth.balanceOf(msg.sender) >= amount, "You don't have enough funds");
         //Realization
+        checkSender = msg.sender;
+        weth.approve(msg.sender, amount);
         weth.approve(address(this), amount);
         weth.transferFrom(msg.sender, address(this), amount);
         
         //Transfer to owner except fee
-        Address.sendValue(payable(domainOwners[_domainName]), amount.mul(100 - fee).div(100) );
+        //Address.sendValue(payable(domainOwners[_domainName]), amount.mul(100 - fee).div(100) );
         //Give sub   
         userSubscriptions[msg.sender][_domainName]
         .expirationTime = block.timestamp + (subscriptionData[_domainName].duration * 1 days);
