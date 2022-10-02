@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 // import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 // import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-contract Token is ERC20, Ownable {
+contract TokenBase is ERC20, Ownable {
     constructor (string memory _name, string memory _symbol) ERC20(_name, _symbol) {}
 
     function mint(address _account, uint256 _amount) external onlyOwner {
