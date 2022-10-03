@@ -25,7 +25,7 @@ contract NFT is ERC721Enumerable, Ownable {
 
   function mint(address _to, uint256 _mintAmount) public payable {
     uint256 supply = totalSupply();
-    require(!publicSaleActive);
+    require(publicSaleActive);
     require(_mintAmount > 0);
     require(_mintAmount <= maxMintAmount);
     require(supply + _mintAmount <= maxSupply);
