@@ -85,11 +85,11 @@ contract NFT is ERC721Enumerable, Ownable {
   }
 
   function pause() public onlyOwner {
-    require(!publicSaleActive, "Already paused");
+    require(publicSaleActive, "Already paused");
     publicSaleActive = false;
   }
   function start() public onlyOwner {
-    require(publicSaleActive, "Already active");
+    require(!publicSaleActive, "Already active");
     publicSaleActive = true;
   }
  
