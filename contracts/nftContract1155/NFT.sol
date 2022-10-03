@@ -18,42 +18,57 @@ contract NFT is ERC1155, Ownable {
     function mint(
         address to, 
         uint256 amountIds, 
-        uint256[] memory amounts) 
+        uint256 amount) 
         public 
         payable 
-        returns(uint256, uint256[] memory, uint256)
     {
+        require(to != address(0));
         require(publicSaleActive, "Sale not active");
         require(amountIds > 0, "Amount Ids = 0");
         require(amountIds <= maxMintAmount, "Exceeded max mint amount");
-        require(counter + amountIds <= maxSupply, "Mint less nft");
-        require(amountIds == amounts.length, "Ids are not equal to amounts");
-        uint256[] memory ids;
-        uint256 totalNft;
+        require(counter + amountIds <= maxSupply, "Mint less nft");        
+        require(amount > 0, "Can not mint 0 tokens");        
 
-        for (uint i = 0; i < amountIds; i++) {
-            //ids[i] = counter + i; TO FIX
-            require(amounts[i] > 0, "Can not mint 0 tokens");
-            totalNft += amounts[i];
-        }
-
-        uint256 mintCost = cost * totalNft;
+        uint256 mintCost = cost * amountIds * amount;
         if (msg.sender != owner()) {
             if(whitelisted[msg.sender] != true) {
             require(msg.value >= mintCost, "Unsufficient funds sent");
         }
         }
-
-        _mintBatch(to, ids, amounts, "");
+        for (uint i = 0; i < amountIds; i++) {
+            _mint(to, counter + i, amount, "");
+        }
         counter += amountIds;
 
         if (msg.value > mintCost) {
             (bool os, ) = payable(msg.sender).call{value: msg.value - mintCost}("");
             require(os, "Return funds was failed");
         }
-        return (amountIds, ids, counter);
     }
 
+    function mintCertainMintedToken(
+        address to, 
+        uint256 id, 
+        uint256 amount) 
+        public 
+        payable 
+    {
+        require(to != address(0));
+        require(publicSaleActive, "Sale not active");
+        require(id < counter, "Token is not minted");
+        require(amount > 0, "Can not mint 0 tokens");        
+
+        uint256 mintCost = cost * amount;
+        if (msg.sender != owner()) {
+            require(msg.value >= mintCost, "Unsufficient funds sent");
+        }
+        _mint(to, id, amount, "");
+
+        if (msg.value > mintCost) {
+            (bool os, ) = payable(msg.sender).call{value: msg.value - mintCost}("");
+            require(os, "Return funds was failed");
+        }
+    }
 
     function pause() public onlyOwner {
         require(publicSaleActive, "Already paused");
