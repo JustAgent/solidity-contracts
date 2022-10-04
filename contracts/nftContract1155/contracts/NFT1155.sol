@@ -3,17 +3,24 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract NFT1155 is ERC1155, Ownable {
+    using Strings for uint256;
 
     uint256 public cost = 0.001 ether;
     uint256 maxSupply = 20;
     uint256 maxMintAmount = 5;
     uint256 counter = 1;
     bool public publicSaleActive = true;
+    string private baseUri;
+    string private constant baseExtension = ".json";
+
     mapping(address => bool) public whitelisted;
 
-    constructor() ERC1155("https://bafybeiaji3yhgrg35v7inftgl2263by24rnjdncqyqptnx47jmn74h53fm.ipfs.w3s.link/") {}
+    constructor() ERC1155("") {
+        baseUri = "https://bafybeiaji3yhgrg35v7inftgl2263by24rnjdncqyqptnx47jmn74h53fm.ipfs.w3s.link/";
+    }
 
     function mint(
         address to, 
@@ -84,5 +91,11 @@ contract NFT1155 is ERC1155, Ownable {
         whitelisted[_user] = true;
     }
 
-
+    function uri(uint256 tokenId) public view override returns (string memory) {
+        require(counter>tokenId, "Not minted yet");
+        string memory currentBaseURI = baseUri;
+        return bytes(currentBaseURI).length > 0
+        ? string(abi.encodePacked(currentBaseURI, tokenId.toString(), baseExtension))
+        : "";
+    }
 }
