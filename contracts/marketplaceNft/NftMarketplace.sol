@@ -16,8 +16,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
     // SeaportInterface seaport =  SeaportInterface(seaport);
 
     struct Order {
-        address from;
-        address to;
+        address maker;
+        address taker;
         SaleKindInterface.Side side;
         SaleKindInterface.SaleKind saleKind;
         uint basePrice;
@@ -26,6 +26,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint listingTime;
         uint expirationTime;
     }
+    Order[] orders;
+    mapping(bytes32 => bool) validOrders;
 
     function transferNFTs(address _to, address, uint256[] tokenIds, address _contractAddress) returns(bool) {
         IERC721 nft = IERC721(_contractAddress);
@@ -45,12 +47,51 @@ contract Marketplace is Ownable, ReentrancyGuard {
         return nft.isApprovedForAll(_user, address(this));
     }
 
-    function createOrder() {
-        
+    function createOrder(
+        address maker,
+        address taker,
+        SaleKindInterface.Side side,
+        SaleKindInterface.SaleKind saleKind,
+        uint basePrice,
+        address paymentToken,
+        uint extra,
+        uint listingTime,
+        uint expirationTime
+    )   private 
+    {
+        Order order = [
+            maker,
+            taker,
+            side,
+            saleKind,
+            basePrice,
+            paymentToken,
+            extra,
+            listingTime,
+            expirationTime
+        ];
+        validateOrderParameters(order);
+
     }
 
-    function sell() {
+    function sell(SaleKindInterface.SaleKind saleKind, uint basePrice, address paymentToken, uint extra, uint256 listingTime) {
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
+        uint duration = mul(1 minutes, listingTime);
+        createOrder(
+            msg.sender,
+            address(0),
+            side,
+            saleKind,
+            basePrice,
+            paymentToken,
+            extra,
+            duration,
+            block.timestamp + duration
+            );
+    }
+
+    function validateOrderParameters(Order order) {
+        
     }
 
 }
