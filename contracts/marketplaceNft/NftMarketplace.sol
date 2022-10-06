@@ -22,12 +22,14 @@ contract Marketplace is Ownable, ReentrancyGuard {
         SaleKindInterface.SaleKind saleKind;
         uint basePrice;
         address paymentToken;
+        address target;
         uint extra;
         uint listingTime;
         uint expirationTime;
     }
     Order[] orders;
     mapping(bytes32 => bool) validOrders;
+    mapping(bytes32 => bool) isSellOrder;
 
     function transferNFTs(address _to, address, uint256[] tokenIds, address _contractAddress) returns(bool) {
         IERC721 nft = IERC721(_contractAddress);
@@ -54,27 +56,29 @@ contract Marketplace is Ownable, ReentrancyGuard {
         SaleKindInterface.SaleKind saleKind,
         uint basePrice,
         address paymentToken,
+        address target,
         uint extra,
         uint listingTime,
         uint expirationTime
     )   private 
     {
-        Order order = [
+        Order order = Order(
             maker,
             taker,
             side,
             saleKind,
             basePrice,
             paymentToken,
+            target,
             extra,
             listingTime,
             expirationTime
-        ];
-        validateOrderParameters(order);
-
+        );
+        require(validateOrderParameters(order), "Invalid order parameters");
+        
     }
 
-    function sell(SaleKindInterface.SaleKind saleKind, uint basePrice, address paymentToken, uint extra, uint256 listingTime) {
+    function sell(SaleKindInterface.SaleKind saleKind, uint basePrice, address paymentToken, address target, uint extra, uint256 listingTime) {
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
         uint duration = mul(1 minutes, listingTime);
         createOrder(
@@ -84,6 +88,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
             saleKind,
             basePrice,
             paymentToken,
+            target,
             extra,
             duration,
             block.timestamp + duration
