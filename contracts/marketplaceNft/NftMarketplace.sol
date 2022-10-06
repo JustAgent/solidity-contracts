@@ -22,8 +22,16 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint listingTime;
         uint expirationTime;
     }
-    Order[] orders;
-    bytes32[] testSellOrders;
+    Order[]  orders;
+    bytes32[]  testSellOrders;
+
+    function testGetOrders() public view returns(Order[] memory) {
+        return orders;
+    }
+    function testGetOrdersHash() public view returns(bytes32[] memory) {
+        return testSellOrders;
+    }
+
     mapping(bytes32 => bool) validOrders;
     mapping(bytes32 => bool) isSellOrder;
     mapping(address => uint256) public nonces;
@@ -66,6 +74,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint listingTime,
         uint expirationTime
     )   private 
+        pure
         returns(Order memory)
     {
         Order memory order = Order(
@@ -117,6 +126,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         
         bytes32 orderHashed = hashOrder(order, nonces[msg.sender]);
         incrementNonce(msg.sender);
+        orders.push(order);
         testSellOrders.push(orderHashed);
     }
 
