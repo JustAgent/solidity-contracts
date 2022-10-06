@@ -85,7 +85,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     function sell(
-        SaleKindInterface.SaleKind saleKind, 
+        uint8 _saleKind, 
         uint basePrice, 
         address paymentToken,
         address target, 
@@ -94,6 +94,13 @@ contract Marketplace is Ownable, ReentrancyGuard {
         public
     {
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
+        SaleKindInterface.SaleKind saleKind;
+        if (_saleKind == 0) {
+            saleKind == SaleKindInterface.SaleKind.FixedPrice;
+        }
+        if (_saleKind == 1) {
+            saleKind == SaleKindInterface.SaleKind.DutchAuction;
+        }
         uint duration = listingTime.mul(1 minutes);
         Order memory order = createOrder(
             msg.sender,
@@ -113,8 +120,18 @@ contract Marketplace is Ownable, ReentrancyGuard {
         testSellOrders.push(orderHashed);
     }
 
-    function validateOrderParameters(Order memory order) private returns(bool) {
-         return true;
+    function validateOrderParameters(Order memory order) private pure returns(bool) {
+        require(order.maker != address(0));
+
+        if (order.side == SaleKindInterface.Side.Sell) {
+        require(order.listingTime > 0, "Listing time == 0");
+        require(order.saleKind == SaleKindInterface.SaleKind.FixedPrice || 
+            order.saleKind == SaleKindInterface.SaleKind.DutchAuction, 'Orders must have a saleKind');
+        require(order.saleKind == SaleKindInterface.SaleKind.FixedPrice || order.expirationTime > 0, "Auction can not be infinite");
+        require(order.basePrice > 0 || order.target != address(0), "Price can not be 0");
+
+        }
+        return true;
     }
 
 
