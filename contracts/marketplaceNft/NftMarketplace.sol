@@ -6,24 +6,51 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "./iseaport.sol";
 
 contract Marketplace is Ownable, ReentrancyGuard {
     
-    startSell(address _contract, uint256 tokenId) public {
-        IERC721 nft = IERC721(_contractAddress);
-        require(nft.ownerOf(tokenId) == msg.sender, "You are not the owner");
+    // address seaportAddress = 0x00000000006c3852cbEf3e08E8dF289169EdE581; //Goerli/Mainnet
+    // address connduit = 0x00000000F9490004C11Cef243f5400493c00Ad63;
+
+    // SeaportInterface seaport =  SeaportInterface(seaport);
+
+    struct Order {
+        address from;
+        address to;
+        SaleKindInterface.Side side;
+        SaleKindInterface.SaleKind saleKind;
+        uint basePrice;
+        address paymentToken;
+        uint extra;
+        uint listingTime;
+        uint expirationTime;
     }
 
-
+    function transferNFTs(address _to, address, uint256[] tokenIds, address _contractAddress) returns(bool) {
+        IERC721 nft = IERC721(_contractAddress);
+        require(checkApproval(msg.sender, _contractAddress), "No allowance");
+        uint256 length = tokenIds.length();
+        for (uint i = 0; i < length; i++) {
+             _transferNFT(_to, tokenIs, _contractAddress);
+        }
+    }
 
     function _transferNFT(address _to, address, uint256 tokenId, address _contractAddress ) private {
-        IERC721 nft = IERC721(_contractAddress);
         nft.safeTransferFrom(msg.sender, _to, tokenId);
     }
 
-    function checkApproval(address _user, address _contract) private view returns(bool) {
+    function checkApproval(address _user, address _contractAddress) private view returns(bool) {
         IERC721 nft = IERC721(_contract);
         return nft.isApprovedForAll(_user, address(this));
+    }
+
+    function createOrder() {
+        
+    }
+
+    function sell() {
+        SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
     }
 
 }
