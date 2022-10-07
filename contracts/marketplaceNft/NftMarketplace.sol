@@ -22,20 +22,42 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint listingTime;
         uint expirationTime;
     }
-    Order[]  orders;
-    bytes32[]  testSellOrders;
 
-    function testGetOrders() public view returns(Order[] memory) {
-        return orders;
-    }
-    function testGetOrdersHash() public view returns(bytes32[] memory) {
-        return testSellOrders;
-    }
-
-    mapping(bytes32 => bool) validOrders;
-    mapping(bytes32 => bool) isSellOrder;
+    Order[]  ordersTest; // returns all orders
+    uint totalOrders;
+    mapping(uint => Order) sellOrders; 
+    // mapping(bytes32 => Order) testSellOrdersMapping;
+    mapping(uint => bool) cancelledOrFinalized;
+    // mapping(bytes32 => bool) validOrders;
     mapping(address => uint256) public nonces;
+    // bytes32[]  testSellOrders; // returns sell orders 
 
+    event SellOrderCreated (
+        uint id, 
+        address indexed maker,
+        SaleKindInterface.SaleKind  saleKind,
+        uint basePrice,
+        address  paymentToken,
+        address target,
+        uint extra,
+        uint listingTime,
+        uint expirationTime);
+
+    event OrderCanceled (
+        uint indexed id
+    );
+
+    // function testGetOrders() public view returns(Order[] memory) {
+    //     return ordersTest;
+    // }
+    // function testGetOrdersHash() public view returns(bytes32[] memory) {
+    //     return testSellOrders;
+    // }
+    function getTotalOrders() public view returns(uint) {
+        return totalOrders;
+    }
+
+    
     function transferNFTs(
         address _to, 
         address, 
@@ -89,6 +111,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
             listingTime,
             expirationTime
         );
+        
         require(validateOrderParameters(order), "Invalid order parameters");
         return order;
     }
@@ -104,13 +127,16 @@ contract Marketplace is Ownable, ReentrancyGuard {
     {
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
         SaleKindInterface.SaleKind saleKind;
+
         if (_saleKind == 0) {
             saleKind == SaleKindInterface.SaleKind.FixedPrice;
         }
         if (_saleKind == 1) {
             saleKind == SaleKindInterface.SaleKind.DutchAuction;
         }
+        
         uint duration = listingTime.mul(1 minutes);
+
         Order memory order = createOrder(
             msg.sender,
             address(0),
@@ -124,10 +150,32 @@ contract Marketplace is Ownable, ReentrancyGuard {
             block.timestamp + duration
             );
         
-        bytes32 orderHashed = hashOrder(order, nonces[msg.sender]);
+        // bytes32 orderHashed = hashOrder(order, nonces[msg.sender]);
         incrementNonce(msg.sender);
-        orders.push(order);
-        testSellOrders.push(orderHashed);
+        ordersTest.push(order);
+        // testSellOrders.push(orderHashed);
+        sellOrders[totalOrders] = order;
+        // testSellOrdersMapping[orderHashed] = order;
+        totalOrders ++;
+
+        emit SellOrderCreated(totalOrders-1, msg.sender, saleKind, basePrice, paymentToken, target, extra, duration, block.timestamp + duration);
+    }
+
+    function cancelOrder(uint id) public {
+        require(!validateOrder(id), "Order already canceled");
+        require(msg.sender == owner() || msg.sender == sellOrders[id].maker);
+        _cancelOrder(id);
+        
+    }
+
+    function _cancelOrder(uint id) public {
+        cancelledOrFinalized[id] = true;
+        emit OrderCanceled(id);
+    }
+
+
+    function validateOrder(uint id) private view returns(bool) {
+        return cancelledOrFinalized[id];
     }
 
     function validateOrderParameters(Order memory order) private pure returns(bool) {
@@ -145,13 +193,13 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
 
-    function hashOrder(Order memory order, uint nonce)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(order, nonce));
-    }
+    // function hashOrder(Order memory order, uint nonce)
+    //     internal
+    //     pure
+    //     returns (bytes32)
+    // {
+    //     return keccak256(abi.encode(order, nonce));
+    // }
 
     function incrementNonce(address user) private {
         nonces[user] += 1;
