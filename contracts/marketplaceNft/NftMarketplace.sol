@@ -11,8 +11,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
 
     struct Order {
+        address nftContract;
         address maker;
         address taker;
+        uint256 tokenId;
         SaleKindInterface.Side side;
         SaleKindInterface.SaleKind saleKind;
         uint basePrice;
@@ -34,6 +36,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     event SellOrderCreated (
         uint id, 
+        address indexed nftContract;
+        uint256 indexed tokenId;
         address indexed maker,
         SaleKindInterface.SaleKind  saleKind,
         uint basePrice,
@@ -85,8 +89,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     function createOrder(
+        address nftContract;
         address maker,
         address taker, // Buy
+        uint256 tokenId;
         SaleKindInterface.Side side,
         SaleKindInterface.SaleKind saleKind,
         uint basePrice,
@@ -100,8 +106,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
         returns(Order memory)
     {
         Order memory order = Order(
+            nftContract;
             maker,
             taker,
+            tokenId;
             side,
             saleKind,
             basePrice,
@@ -117,6 +125,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     function sell(
+        address nftContract;
+        uint256 tokenId;
         uint8 _saleKind, 
         uint basePrice, 
         address paymentToken,
@@ -134,12 +144,14 @@ contract Marketplace is Ownable, ReentrancyGuard {
         if (_saleKind == 1) {
             saleKind == SaleKindInterface.SaleKind.DutchAuction;
         }
-        
+
         uint duration = listingTime.mul(1 minutes);
 
-        Order memory order = createOrder(
+        Order memory order = createSellOrder(
+            address nftContract;
             msg.sender,
             address(0),
+            uint256 tokenId;
             side,
             saleKind,
             basePrice,
@@ -160,6 +172,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
         emit SellOrderCreated(totalOrders-1, msg.sender, saleKind, basePrice, paymentToken, target, extra, duration, block.timestamp + duration);
     }
+
+    // function buy(type name) {
+        
+    // }
 
     function cancelOrder(uint id) public {
         require(!validateOrder(id), "Order already canceled");
