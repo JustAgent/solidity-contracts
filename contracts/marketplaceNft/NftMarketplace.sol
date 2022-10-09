@@ -19,7 +19,6 @@ contract Marketplace is Ownable, ReentrancyGuard {
     address feeRecipient;
     mapping(uint => Order) public orders; 
     mapping(address => mapping(uint256 => uint)) public ordersId;
-    mapping(uint => bool) public cancelledOrFinalized;
     mapping(uint => bool) public activeSales;
     // Get orders by contract name
     mapping(uint => Offer) public offers;
@@ -61,27 +60,39 @@ contract Marketplace is Ownable, ReentrancyGuard {
         address target,
         uint extra,
         uint listingTime,
-        uint expirationTime);
+        uint expirationTime
+    );
 
-    event BuyOrderCreated (
-        uint id, 
+    event BuyExecuted (
         address indexed nftContract,
         uint256 indexed tokenId,
+        address buyer
+    );
+
+    event NewOffer (
+        uint indexed id,
+        address nftContract,
+        uint256 tokenId, 
         address indexed maker,
-        address taker,
-        uint basePrice,
-        address  paymentToken,
-        address target,
+        address paymentToken, 
+        uint256 offerPrice,
         uint listingTime,
-        uint expirationTime);
+        uint expirationTime
+    );
+
+    event OfferApplied (
+        uint indexed id,
+        address indexed nftContract,
+        uint256 indexed tokenId
+    );
 
     event OrderCanceled (
         uint indexed id
     );
 
-    // function testGetOrders() public view returns(Order[] memory) {
-    //     return ordersTest;
-    // }
+    event OfferCanceled (
+        uint indexed id
+    );
 
     constructor(address _feeRecipient) {
         feeRecipient = _feeRecipient;
@@ -113,10 +124,6 @@ contract Marketplace is Ownable, ReentrancyGuard {
         nft.safeTransferFrom(from, _to, tokenId);
     }
 
-
-    // The function calling from dapp by owner to execute buy order
-    
-
     function checkApprovalERC721(address _user, address nftContract) private view returns(bool) {
         IERC721 nft = IERC721(nftContract);
         return nft.isApprovedForAll(_user, address(this));
@@ -134,7 +141,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint256 tokenId,
         SaleKindInterface.Side side, // Sell or Buy
         SaleKindInterface.SaleKind saleKind, // 
-        uint basePrice, // For Buy: if < tokenPrice -> makeOffer, else buying immediately
+        uint basePrice, // 
         address paymentToken, 
         address target, // Private selling if specified
         uint extra, // 0 if Buy
@@ -237,7 +244,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         }
         
         execute(orderId, recipient);
-        //event
+        emit BuyExecuted(nftContract, tokenId, msg.sender);
     }
 
     function makeOffer(
@@ -268,7 +275,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
         activeOffers[totalOffers] = true;
         offers[totalOffers] = offer;
         totalOffers ++;
-        //event
+        
+        emit NewOffer(totalOffers - 1, nftContract, tokenId, msg.sender, paymentToken, offerPrice, listingTime, block.timestamp + duration);
 
     }
 
@@ -280,11 +288,13 @@ contract Marketplace is Ownable, ReentrancyGuard {
         require(IERC20(offer.paymentToken).allowance(offer.maker, address(this)) >= offer.basePrice, "No allowance");
 
         executeOffer(id);
+        activeOffers[totalOffers] = false;
+        delete offers[totalOffers];
         //event
     }
 
     function cancelOrder(uint id) public nonReentrant {
-        require(!validateOrder(id), "Order already canceled");
+        require(!activeSales[id], "Order already canceled");
         require(msg.sender == owner() || msg.sender == orders[id].maker);
         _cancelOrder(id);
         
@@ -292,16 +302,25 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     function _cancelOrder(uint id) private {
-        cancelledOrFinalized[id] = true;
         delete orders[id];
         activeSales[id] = false;
         emit OrderCanceled(id);
     }
 
-
-    function validateOrder(uint id) private view returns(bool) {
-        return cancelledOrFinalized[id];
+    function cancelOffer(uint id) public nonReentrant {
+        require(activeOffers[id], "Order already canceled");
+        require(msg.sender == owner() || msg.sender == offers[id].maker);
+        _cancelOffer(id);
+        
+        
     }
+
+    function _cancelOffer(uint id) private {
+        activeOffers[id] = true;
+        delete offers[id];
+        emit OfferCanceled(id);
+    }
+
 
     function validateOrderParameters(Order memory order) private pure returns(bool) {
         require(order.maker != address(0));
@@ -405,14 +424,6 @@ library SaleKindInterface {
     enum Side { Buy, Sell }
 
     enum SaleKind { FixedPrice, DutchAuction, Buy }
-
-    function validateParameters(SaleKind saleKind, uint expirationTime)
-        pure
-        internal
-        returns (bool)
-    {
-        return (saleKind == SaleKind.FixedPrice || expirationTime > 0);
-    }
 
     
     function canSettleOrder(uint listingTime, uint expirationTime)
