@@ -27,6 +27,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     Order[]  ordersTest; // returns all orders
     uint totalOrders;
+    uint256 platformFee = 5; // 5%
     address feeRecipient;
     mapping(uint => Order) orders; 
     mapping(uint => bool) cancelledOrFinalized;
@@ -96,6 +97,14 @@ contract Marketplace is Ownable, ReentrancyGuard {
         nft.safeTransferFrom(from, _to, tokenId);
     }
 
+
+    // The function calling from dapp by owner to execute buy order
+    function execute(uint id) public onlyOwner{
+        // add check
+        Order memory order = orders[id];
+        
+    }
+
     function checkApproval(address _user, address nftContract) private view returns(bool) {
         IERC721 nft = IERC721(nftContract);
         return nft.isApprovedForAll(_user, address(this));
@@ -147,6 +156,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint extra, 
         uint256 listingTime) 
         public
+        nonReentrant
     {
         require(checkApproval(msg.sender, nftContract), "No allowance");
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
@@ -185,7 +195,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         emit SellOrderCreated(totalOrders-1, nftContract,tokenId, msg.sender, saleKind, basePrice, paymentToken, target, extra, duration, block.timestamp + duration);
     }
 
-    function buy(
+    function buy (
         address nftContract,
         uint256 tokenId,
         address recipient,
@@ -195,7 +205,17 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint256 listingTime
         ) 
         public 
+        nonReentrant
+        payable
     {   
+        // add check
+
+        if (paymentToken != address(0)) {
+            require(msg.value == 0);
+        }
+        if (paymentToken == address(0)) {
+            require(msg.value == basePrice);
+        }
         SaleKindInterface.Side side = SaleKindInterface.Side.Buy;
         SaleKindInterface.SaleKind saleKind;
         saleKind = SaleKindInterface.SaleKind.Buy;
@@ -221,6 +241,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
         ordersTest.push(order); // test
         orders[totalOrders] = order;
         totalOrders ++;
+
+        
 
         emit BuyOrderCreated(totalOrders-1, nftContract,tokenId, msg.sender, recipient, basePrice, paymentToken, target, duration, block.timestamp + duration);
     
