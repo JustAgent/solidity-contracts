@@ -14,14 +14,17 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     Order[]  ordersTest; // returns all orders
     uint totalOrders;
+    uint totalOffers;
     uint256 platformFee = 5; // 5%
     address feeRecipient;
     mapping(uint => Order) public orders; 
+    mapping(address => mapping(uint256 => uint)) public ordersId;
     mapping(uint => bool) public cancelledOrFinalized;
     mapping(uint => bool) public activeSales;
-    // Get orders id by contract name
-    mapping(address => mapping(uint256 => uint)) public ordersId;
-    mapping(address => mapping(uint256 => Offer)) public offers;
+    // Get orders by contract name
+    mapping(uint => Offer) public offers;
+    mapping(uint => bool) public activeOffers;
+
     struct Order {
         address nftContract;
         address maker;
@@ -38,8 +41,11 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     struct Offer {
+        address nftContract;
+        uint256 tokenId;
         address maker;
-        uint price;
+        address paymentToken;
+        uint basePrice;
         uint listingTime;
         uint expirationTime;
     }
@@ -109,35 +115,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
 
     // The function calling from dapp by owner to execute buy order
-    function execute(uint id, address receiver) private {
-        require(receiver != address(0));
-        Order memory order = orders[id];
-        uint256 value = order.basePrice.mul(platformFee).div(100);
-        uint256 fee = order.basePrice.sub(value);
-
-        if (order.paymentToken == address(0)) {
-            (bool os, ) = payable(order.maker).call{value: value}("");
-            require(os, "Maker tx failed");
-            (bool os2, ) = payable(feeRecipient).call{value: fee}("");
-            require(os2, "Fee tx failed");
-        }
-
-        if (order.paymentToken != address(0)) {
-            IERC20 token = IERC20(order.paymentToken);
-            uint balanceBefore = token.balanceOf(feeRecipient);
-            bool os = token.transferFrom(msg.sender, order.maker, value);
-            require(os, "Maker tx erc20 failed");
-            bool os2 = token.transferFrom(msg.sender, feeRecipient, value);
-            require(os2, "Fee tx erc20 failed");
-            uint balanceAfter = token.balanceOf(feeRecipient);
-            require(balanceAfter > balanceBefore, "Wrong balance");
-        }
-
-        IERC721 nft = IERC721(order.nftContract);
-        nft.safeTransferFrom(order.maker, receiver, order.tokenId);
-        require(nft.ownerOf(order.tokenId) == msg.sender);
-
-    }
+    
 
     function checkApprovalERC721(address _user, address nftContract) private view returns(bool) {
         IERC721 nft = IERC721(nftContract);
@@ -272,21 +250,37 @@ contract Marketplace is Ownable, ReentrancyGuard {
         public 
         nonReentrant
     {
+        require(paymentToken != address(0));
         IERC20 token = IERC20(paymentToken);
         require(token.balanceOf(msg.sender) >= offerPrice, "Not enough funds");
         require(checkApprovalERC20(msg.sender, paymentToken) >= offerPrice, "No allowance");
         uint duration = listingTime.mul(1 minutes);
 
         Offer memory offer = Offer(
+            nftContract,
+            tokenId,
             msg.sender,
+            paymentToken,
             offerPrice,
             listingTime,
             block.timestamp + duration
         );
-        offers[nftContract][tokenId] = offer;
-
+        activeOffers[totalOffers] = true;
+        offers[totalOffers] = offer;
+        totalOffers ++;
         //event
 
+    }
+
+    function applyOffer(uint id) public {
+        Offer memory offer = offers[id];
+        IERC721 nft = IERC721(offer.nftContract);
+        require(nft.ownerOf(offer.tokenId) == msg.sender, "You are not the owner");
+        require(IERC20(offer.paymentToken).balanceOf(offer.maker) >= offer.basePrice, "Maker have not enough funds");
+        require(IERC20(offer.paymentToken).allowance(offer.maker, address(this)) >= offer.basePrice, "No allowance");
+
+        executeOffer(id);
+        //event
     }
 
     function cancelOrder(uint id) public nonReentrant {
@@ -327,18 +321,60 @@ contract Marketplace is Ownable, ReentrancyGuard {
         return true;
     }
 
+    function execute(uint id, address receiver) private {
+        require(receiver != address(0));
+        Order memory order = orders[id];
+        uint256 value = order.basePrice.mul(platformFee).div(100);
+        uint256 fee = order.basePrice.sub(value);
 
-    // function hashOrder(Order memory order, uint nonce)
-    //     internal
-    //     pure
-    //     returns (bytes32)
-    // {
-    //     return keccak256(abi.encode(order, nonce));
-    // }
+        if (order.paymentToken == address(0)) {
+            (bool os, ) = payable(order.maker).call{value: value}("");
+            require(os, "Maker tx failed");
+            (bool os2, ) = payable(feeRecipient).call{value: fee}("");
+            require(os2, "Fee tx failed");
+        }
 
-    // function incrementNonce(address user) private {
-    //     nonces[user] += 1;
-    // }
+        if (order.paymentToken != address(0)) {
+            IERC20 token = IERC20(order.paymentToken);
+            uint balanceBefore = token.balanceOf(feeRecipient);
+            bool os = token.transferFrom(msg.sender, order.maker, value);
+            require(os, "Maker tx erc20 failed");
+            bool os2 = token.transferFrom(msg.sender, feeRecipient, fee);
+            require(os2, "Fee tx erc20 failed");
+            uint balanceAfter = token.balanceOf(feeRecipient);
+            require(balanceAfter > balanceBefore, "Wrong balance");
+        }
+
+        IERC721 nft = IERC721(order.nftContract);
+        nft.safeTransferFrom(order.maker, receiver, order.tokenId);
+        require(nft.ownerOf(order.tokenId) == msg.sender);
+
+    }
+
+    function executeOffer(uint id) private {
+        Offer memory offer = offers[id];
+        uint256 value = offer.basePrice.mul(platformFee).div(100);
+        uint256 fee = offer.basePrice.sub(value);
+
+        IERC20 token = IERC20(offer.paymentToken);
+        uint balanceBefore = token.balanceOf(feeRecipient);
+        bool os = token.transferFrom(offer.maker, msg.sender, value);
+        require(os, "Maker tx erc20 failed");
+        bool os2 = token.transferFrom(offer.maker, feeRecipient, fee);
+        require(os2, "Fee tx erc20 failed");
+        uint balanceAfter = token.balanceOf(feeRecipient);
+        require(balanceAfter > balanceBefore, "Wrong balance");
+        
+
+        IERC721 nft = IERC721(offer.nftContract);
+        nft.safeTransferFrom(msg.sender, offer.maker, offer.tokenId);
+        require(nft.ownerOf(offer.tokenId) == offer.maker);
+
+    }
+
+    receive() payable external {
+        
+    }
 
 }
 
@@ -398,7 +434,7 @@ library SaleKindInterface {
         } else if (saleKind == SaleKind.DutchAuction) {
             uint diff = SafeMath.div(SafeMath.mul(extra, SafeMath.sub(block.timestamp, listingTime)), SafeMath.sub(expirationTime, listingTime));
             if (side == Side.Sell) {
-                /* Sell-side - start price: basePrice. End price: basePrice - extra. */
+                /* Sell-side - start basePrice: basePrice. End price: basePrice - extra. */
                 return SafeMath.sub(basePrice, diff);
             } else {
                 /* Buy-side - start price: basePrice. End price: basePrice + extra. */
