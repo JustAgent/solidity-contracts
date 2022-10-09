@@ -12,7 +12,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     
 
-    Order[]  ordersTest; // returns all orders
+    Order[]  ordersTest; // test returns all orders
     uint totalOrders;
     uint totalOffers;
     uint256 platformFee = 5; // 5%
@@ -20,6 +20,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
     mapping(uint => Order) public orders; 
     mapping(address => mapping(uint256 => uint)) public ordersId;
     mapping(uint => bool) public activeSales;
+
     // Get orders by contract name
     mapping(uint => Offer) public offers;
     mapping(uint => bool) public activeOffers;
@@ -210,7 +211,6 @@ contract Marketplace is Ownable, ReentrancyGuard {
             block.timestamp + duration
             );
 
-        // incrementNonce(msg.sender); // unused
         ordersTest.push(order); // test
         orders[totalOrders] = order;
         activeSales[totalOrders] = true;
