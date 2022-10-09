@@ -14,16 +14,12 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     Order[]  ordersTest; // test returns all orders
     uint totalOrders;
-    uint totalOffers;
     uint256 platformFee = 5; // 5%
     address feeRecipient;
     mapping(uint => Order) public orders; 
     mapping(address => mapping(uint256 => uint)) public ordersId;
-    mapping(uint => bool) public activeSales;
+    mapping(uint => bool) public activeOrders;
 
-    // Get orders by contract name
-    mapping(uint => Offer) public offers;
-    mapping(uint => bool) public activeOffers;
 
     struct Order {
         address nftContract;
@@ -40,15 +36,6 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint expirationTime;
     }
 
-    struct Offer {
-        address nftContract;
-        uint256 tokenId;
-        address maker;
-        address paymentToken;
-        uint basePrice;
-        uint listingTime;
-        uint expirationTime;
-    }
 
     event SellOrderCreated (
         uint id, 
@@ -76,7 +63,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint256 tokenId, 
         address indexed maker,
         address paymentToken, 
-        uint256 offerPrice,
+        uint256 basePrice,
         uint listingTime,
         uint expirationTime
     );
@@ -213,7 +200,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
         ordersTest.push(order); // test
         orders[totalOrders] = order;
-        activeSales[totalOrders] = true;
+        activeOrders[totalOrders] = true;
         ordersId[nftContract][tokenId] = totalOrders;
         totalOrders ++;
 
@@ -222,18 +209,17 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     function buy (
         address nftContract,
-        uint256 tokenId,
-        address recipient
-        ) 
+        uint256 tokenId
+    ) 
         public 
         nonReentrant
         payable
     {   
         
         uint orderId = ordersId[nftContract][tokenId];
-        require(activeSales[orderId], "Not selling");
+        require(activeOrders[orderId], "Not selling");
         Order memory order = orders[orderId];
-
+        require(order.saleKind == SaleKindInterface.SaleKind.FixedPrice, "Can t buy item from auction");
         if (order.paymentToken != address(0)) {
             require(checkApprovalERC20(msg.sender, order.paymentToken) >= order.basePrice);
             require(IERC20(order.paymentToken).balanceOf(msg.sender) >= order.basePrice, "Not enough funds");
@@ -243,7 +229,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
             require(msg.value == order.basePrice);
         }
         
-        execute(orderId, recipient);
+        execute(orderId);
         emit BuyExecuted(nftContract, tokenId, msg.sender);
     }
 
@@ -251,7 +237,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         address nftContract,
         uint256 tokenId, 
         address paymentToken, 
-        uint256 offerPrice,
+        uint256 basePrice,
         uint listingTime
         ) 
         public 
@@ -259,66 +245,60 @@ contract Marketplace is Ownable, ReentrancyGuard {
     {
         require(paymentToken != address(0));
         IERC20 token = IERC20(paymentToken);
-        require(token.balanceOf(msg.sender) >= offerPrice, "Not enough funds");
-        require(checkApprovalERC20(msg.sender, paymentToken) >= offerPrice, "No allowance");
+        require(token.balanceOf(msg.sender) >= basePrice, "Not enough funds");
+        require(checkApprovalERC20(msg.sender, paymentToken) >= basePrice, "No allowance");
         uint duration = listingTime.mul(1 minutes);
 
-        Offer memory offer = Offer(
+        SaleKindInterface.Side side = SaleKindInterface.Side.Offer;
+        SaleKindInterface.SaleKind saleKind = SaleKindInterface.SaleKind.Offer;
+
+        Order memory offer = Order(
             nftContract,
-            tokenId,
             msg.sender,
+            msg.sender,
+            tokenId,
+            side,
+            saleKind,
+            basePrice,
             paymentToken,
-            offerPrice,
+            address(0),
+            0,
             listingTime,
             block.timestamp + duration
         );
-        activeOffers[totalOffers] = true;
-        offers[totalOffers] = offer;
-        totalOffers ++;
+        activeOrders[totalOrders] = true;
+        orders[totalOrders] = offer;
+        totalOrders ++;
         
-        emit NewOffer(totalOffers - 1, nftContract, tokenId, msg.sender, paymentToken, offerPrice, listingTime, block.timestamp + duration);
+        emit NewOffer(totalOrders - 1, nftContract, tokenId, msg.sender, paymentToken, basePrice, listingTime, block.timestamp + duration);
 
     }
 
     function applyOffer(uint id) public {
-        Offer memory offer = offers[id];
-        IERC721 nft = IERC721(offer.nftContract);
-        require(nft.ownerOf(offer.tokenId) == msg.sender, "You are not the owner");
-        require(IERC20(offer.paymentToken).balanceOf(offer.maker) >= offer.basePrice, "Maker have not enough funds");
-        require(IERC20(offer.paymentToken).allowance(offer.maker, address(this)) >= offer.basePrice, "No allowance");
+        Order memory order = orders[id];
+        require(order.side == SaleKindInterface.Side.Offer);
+        require(order.saleKind == SaleKindInterface.SaleKind.Offer);
+        IERC721 nft = IERC721(order.nftContract);
+        require(nft.ownerOf(order.tokenId) == msg.sender, "You are not the owner");
+        require(IERC20(order.paymentToken).balanceOf(order.maker) >= order.basePrice, "Maker have not enough funds");
+        require(IERC20(order.paymentToken).allowance(order.maker, address(this)) >= order.basePrice, "No allowance");
 
-        executeOffer(id);
-        activeOffers[totalOffers] = false;
-        delete offers[totalOffers];
+        execute(id);
+        activeOrders[totalOrders] = false;
+        delete orders[totalOrders];
         //event
     }
 
     function cancelOrder(uint id) public nonReentrant {
-        require(!activeSales[id], "Order already canceled");
+        require(!activeOrders[id], "Order already canceled");
         require(msg.sender == owner() || msg.sender == orders[id].maker);
-        _cancelOrder(id);
-        
-        
+        _cancelOrder(id); 
     }
 
     function _cancelOrder(uint id) private {
         delete orders[id];
-        activeSales[id] = false;
+        activeOrders[id] = false;
         emit OrderCanceled(id);
-    }
-
-    function cancelOffer(uint id) public nonReentrant {
-        require(activeOffers[id], "Order already canceled");
-        require(msg.sender == owner() || msg.sender == offers[id].maker);
-        _cancelOffer(id);
-        
-        
-    }
-
-    function _cancelOffer(uint id) private {
-        activeOffers[id] = true;
-        delete offers[id];
-        emit OfferCanceled(id);
     }
 
 
@@ -332,22 +312,27 @@ contract Marketplace is Ownable, ReentrancyGuard {
         require(order.saleKind == SaleKindInterface.SaleKind.FixedPrice || order.expirationTime > 0, "Auction can not be infinite");
         require(order.basePrice > 0 || order.target != address(0), "Price can not be 0");
 
-        if (order.side == SaleKindInterface.Side.Buy) {
-            require(order.taker != address(0), "Can not transfer to zero address");      
-        }
-
         }
         return true;
     }
 
-    function execute(uint id, address receiver) private {
-        require(receiver != address(0));
+    function execute(uint id) private {
+        address maker;
+        address taker;
         Order memory order = orders[id];
+        if (order.side == SaleKindInterface.Side.Sell) {
+            maker = order.maker;
+            taker = msg.sender;
+        }
+        if (order.side == SaleKindInterface.Side.Offer) {
+            maker = msg.sender;
+            taker = order.maker;
+        }
         uint256 value = order.basePrice.mul(platformFee).div(100);
         uint256 fee = order.basePrice.sub(value);
 
-        if (order.paymentToken == address(0)) {
-            (bool os, ) = payable(order.maker).call{value: value}("");
+        if (order.paymentToken == address(0)) { // Only for sell
+            (bool os, ) = payable(maker).call{value: value}("");
             require(os, "Maker tx failed");
             (bool os2, ) = payable(feeRecipient).call{value: fee}("");
             require(os2, "Fee tx failed");
@@ -356,38 +341,17 @@ contract Marketplace is Ownable, ReentrancyGuard {
         if (order.paymentToken != address(0)) {
             IERC20 token = IERC20(order.paymentToken);
             uint balanceBefore = token.balanceOf(feeRecipient);
-            bool os = token.transferFrom(msg.sender, order.maker, value);
+            bool os = token.transferFrom(taker, maker, value);
             require(os, "Maker tx erc20 failed");
-            bool os2 = token.transferFrom(msg.sender, feeRecipient, fee);
+            bool os2 = token.transferFrom(taker, feeRecipient, fee);
             require(os2, "Fee tx erc20 failed");
             uint balanceAfter = token.balanceOf(feeRecipient);
             require(balanceAfter > balanceBefore, "Wrong balance");
         }
 
         IERC721 nft = IERC721(order.nftContract);
-        nft.safeTransferFrom(order.maker, receiver, order.tokenId);
-        require(nft.ownerOf(order.tokenId) == msg.sender);
-
-    }
-
-    function executeOffer(uint id) private {
-        Offer memory offer = offers[id];
-        uint256 value = offer.basePrice.mul(platformFee).div(100);
-        uint256 fee = offer.basePrice.sub(value);
-
-        IERC20 token = IERC20(offer.paymentToken);
-        uint balanceBefore = token.balanceOf(feeRecipient);
-        bool os = token.transferFrom(offer.maker, msg.sender, value);
-        require(os, "Maker tx erc20 failed");
-        bool os2 = token.transferFrom(offer.maker, feeRecipient, fee);
-        require(os2, "Fee tx erc20 failed");
-        uint balanceAfter = token.balanceOf(feeRecipient);
-        require(balanceAfter > balanceBefore, "Wrong balance");
-        
-
-        IERC721 nft = IERC721(offer.nftContract);
-        nft.safeTransferFrom(msg.sender, offer.maker, offer.tokenId);
-        require(nft.ownerOf(offer.tokenId) == offer.maker);
+        nft.safeTransferFrom(maker, taker, order.tokenId);
+        require(nft.ownerOf(order.tokenId) == taker);
 
     }
 
@@ -421,9 +385,9 @@ contract TokenRecipient{
 
 library SaleKindInterface {
 
-    enum Side { Buy, Sell }
+    enum Side { Offer, Sell }
 
-    enum SaleKind { FixedPrice, DutchAuction, Buy }
+    enum SaleKind { FixedPrice, DutchAuction, Offer }
 
     
     function canSettleOrder(uint listingTime, uint expirationTime)
