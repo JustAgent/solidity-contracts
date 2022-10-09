@@ -16,13 +16,12 @@ contract Marketplace is Ownable, ReentrancyGuard {
     uint totalOrders;
     uint256 platformFee = 5; // 5%
     address feeRecipient;
-    mapping(uint => Order) orders; 
-    mapping(uint => bool) cancelledOrFinalized;
-    // mapping(address => uint256) public nonces;
-    mapping(uint => bool) activeSales;
+    mapping(uint => Order) public orders; 
+    mapping(uint => bool) public cancelledOrFinalized;
+    mapping(uint => bool) public activeSales;
     // Get orders id by contract name
-    mapping(address => mapping(uint256 => uint)) ordersId;
-
+    mapping(address => mapping(uint256 => uint)) public ordersId;
+    mapping(address => mapping(uint256 => Offer)) public offers;
     struct Order {
         address nftContract;
         address maker;
@@ -34,6 +33,13 @@ contract Marketplace is Ownable, ReentrancyGuard {
         address paymentToken;
         address target;
         uint extra;
+        uint listingTime;
+        uint expirationTime;
+    }
+
+    struct Offer {
+        address maker;
+        uint price;
         uint listingTime;
         uint expirationTime;
     }
@@ -253,7 +259,34 @@ contract Marketplace is Ownable, ReentrancyGuard {
         }
         
         execute(orderId, recipient);
-            
+        //event
+    }
+
+    function makeOffer(
+        address nftContract,
+        uint256 tokenId, 
+        address paymentToken, 
+        uint256 offerPrice,
+        uint listingTime
+        ) 
+        public 
+        nonReentrant
+    {
+        IERC20 token = IERC20(paymentToken);
+        require(token.balanceOf(msg.sender) >= offerPrice, "Not enough funds");
+        require(checkApprovalERC20(msg.sender, paymentToken) >= offerPrice, "No allowance");
+        uint duration = listingTime.mul(1 minutes);
+
+        Offer memory offer = Offer(
+            msg.sender,
+            offerPrice,
+            listingTime,
+            block.timestamp + duration
+        );
+        offers[nftContract][tokenId] = offer;
+
+        //event
+
     }
 
     function cancelOrder(uint id) public nonReentrant {
