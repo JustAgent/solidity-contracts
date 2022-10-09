@@ -27,23 +27,34 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
     Order[]  ordersTest; // returns all orders
     uint totalOrders;
-    mapping(uint => Order) sellOrders; 
-    // mapping(bytes32 => Order) testSellOrdersMapping;
+    address feeRecipient;
+    mapping(uint => Order) orders; 
     mapping(uint => bool) cancelledOrFinalized;
-    // mapping(bytes32 => bool) validOrders;
-    mapping(address => uint256) public nonces;
-    // bytes32[]  testSellOrders; // returns sell orders 
+    // mapping(address => uint256) public nonces;
+    mapping(address => mapping(uint256 => bool)) activeSales;
 
     event SellOrderCreated (
         uint id, 
-        address indexed nftContract;
-        uint256 indexed tokenId;
+        address indexed nftContract,
+        uint256 indexed tokenId,
         address indexed maker,
         SaleKindInterface.SaleKind  saleKind,
         uint basePrice,
         address  paymentToken,
         address target,
         uint extra,
+        uint listingTime,
+        uint expirationTime);
+
+    event BuyOrderCreated (
+        uint id, 
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        address indexed maker,
+        address taker,
+        uint basePrice,
+        address  paymentToken,
+        address target,
         uint listingTime,
         uint expirationTime);
 
@@ -54,9 +65,11 @@ contract Marketplace is Ownable, ReentrancyGuard {
     // function testGetOrders() public view returns(Order[] memory) {
     //     return ordersTest;
     // }
-    // function testGetOrdersHash() public view returns(bytes32[] memory) {
-    //     return testSellOrders;
-    // }
+
+    constructor(address _feeRecipient) {
+        feeRecipient = _feeRecipient;
+    }
+
     function getTotalOrders() public view returns(uint) {
         return totalOrders;
     }
@@ -64,41 +77,41 @@ contract Marketplace is Ownable, ReentrancyGuard {
     
     function transferNFTs(
         address _to, 
-        address, 
         uint256[] memory tokenIds, 
-        address _contractAddress)
+        address nftContract)
         public 
         returns(bool) 
     {
-        IERC721 nft = IERC721(_contractAddress);
-        require(checkApproval(msg.sender, _contractAddress), "No allowance");
+        require(checkApproval(msg.sender, nftContract), "No allowance");
+
+        IERC721 nft = IERC721(nftContract);
         uint256 length = tokenIds.length;
         for (uint i = 0; i < length; i++) {
-             _transferNFT(_to, tokenIds[i], nft);
+             _transferNFT(msg.sender, _to, tokenIds[i], nft);
         }
         return true;
     }
 
-    function _transferNFT(address _to, uint256 tokenId, IERC721 nft) private {
-        nft.safeTransferFrom(msg.sender, _to, tokenId);
+    function _transferNFT(address from, address _to, uint256 tokenId, IERC721 nft) private {
+        nft.safeTransferFrom(from, _to, tokenId);
     }
 
-    function checkApproval(address _user, address _contractAddress) private view returns(bool) {
-        IERC721 nft = IERC721(_contractAddress);
+    function checkApproval(address _user, address nftContract) private view returns(bool) {
+        IERC721 nft = IERC721(nftContract);
         return nft.isApprovedForAll(_user, address(this));
     }
 
     function createOrder(
-        address nftContract;
+        address nftContract,
         address maker,
         address taker, // Buy
-        uint256 tokenId;
-        SaleKindInterface.Side side,
-        SaleKindInterface.SaleKind saleKind,
-        uint basePrice,
+        uint256 tokenId,
+        SaleKindInterface.Side side, // Sell or Buy
+        SaleKindInterface.SaleKind saleKind, // 
+        uint basePrice, // For Buy: if < tokenPrice -> makeOffer, else buying immediately
         address paymentToken, 
         address target, // Private selling if specified
-        uint extra,
+        uint extra, // 0 if Buy
         uint listingTime,
         uint expirationTime
     )   private 
@@ -106,10 +119,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
         returns(Order memory)
     {
         Order memory order = Order(
-            nftContract;
+            nftContract,
             maker,
             taker,
-            tokenId;
+            tokenId,
             side,
             saleKind,
             basePrice,
@@ -125,8 +138,8 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
     function sell(
-        address nftContract;
-        uint256 tokenId;
+        address nftContract,
+        uint256 tokenId,
         uint8 _saleKind, 
         uint basePrice, 
         address paymentToken,
@@ -135,6 +148,7 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint256 listingTime) 
         public
     {
+        require(checkApproval(msg.sender, nftContract), "No allowance");
         SaleKindInterface.Side side = SaleKindInterface.Side.Sell;
         SaleKindInterface.SaleKind saleKind;
 
@@ -147,11 +161,11 @@ contract Marketplace is Ownable, ReentrancyGuard {
 
         uint duration = listingTime.mul(1 minutes);
 
-        Order memory order = createSellOrder(
-            address nftContract;
+        Order memory order = createOrder(
+            nftContract,
             msg.sender,
             address(0),
-            uint256 tokenId;
+            tokenId,
             side,
             saleKind,
             basePrice,
@@ -161,31 +175,71 @@ contract Marketplace is Ownable, ReentrancyGuard {
             duration,
             block.timestamp + duration
             );
-        
-        // bytes32 orderHashed = hashOrder(order, nonces[msg.sender]);
-        incrementNonce(msg.sender);
-        ordersTest.push(order);
-        // testSellOrders.push(orderHashed);
-        sellOrders[totalOrders] = order;
-        // testSellOrdersMapping[orderHashed] = order;
+
+        // incrementNonce(msg.sender); // unused
+        ordersTest.push(order); // test
+        orders[totalOrders] = order;
+        activeSales[nftContract][tokenId] = true;
         totalOrders ++;
 
-        emit SellOrderCreated(totalOrders-1, msg.sender, saleKind, basePrice, paymentToken, target, extra, duration, block.timestamp + duration);
+        emit SellOrderCreated(totalOrders-1, nftContract,tokenId, msg.sender, saleKind, basePrice, paymentToken, target, extra, duration, block.timestamp + duration);
     }
 
-    // function buy(type name) {
-        
-    // }
+    function buy(
+        address nftContract,
+        uint256 tokenId,
+        address recipient,
+        uint basePrice, 
+        address paymentToken, // Required equal if its specified in sellOrder
+        address target, 
+        uint256 listingTime
+        ) 
+        public 
+    {   
+        SaleKindInterface.Side side = SaleKindInterface.Side.Buy;
+        SaleKindInterface.SaleKind saleKind;
+        saleKind = SaleKindInterface.SaleKind.Buy;
 
-    function cancelOrder(uint id) public {
+        uint duration = listingTime.mul(1 minutes);
+        
+
+        Order memory order = createOrder(
+            nftContract,
+            msg.sender,
+            recipient,
+            tokenId,
+            side,
+            saleKind,
+            basePrice,
+            paymentToken,
+            target,
+            0, // extra
+            duration,
+            block.timestamp + duration
+            );
+
+        ordersTest.push(order); // test
+        orders[totalOrders] = order;
+        totalOrders ++;
+
+        emit BuyOrderCreated(totalOrders-1, nftContract,tokenId, msg.sender, recipient, basePrice, paymentToken, target, duration, block.timestamp + duration);
+    
+    }
+
+    function cancelOrder(uint id) public nonReentrant {
         require(!validateOrder(id), "Order already canceled");
-        require(msg.sender == owner() || msg.sender == sellOrders[id].maker);
+        require(msg.sender == owner() || msg.sender == orders[id].maker);
         _cancelOrder(id);
         
+        
     }
 
-    function _cancelOrder(uint id) public {
+    function _cancelOrder(uint id) private {
+        address nftContract = orders[id].nftContract;
+        uint256 tokenId = orders[id].tokenId;
         cancelledOrFinalized[id] = true;
+        delete orders[id];
+        activeSales[nftContract][tokenId] = true;
         emit OrderCanceled(id);
     }
 
@@ -204,6 +258,10 @@ contract Marketplace is Ownable, ReentrancyGuard {
         require(order.saleKind == SaleKindInterface.SaleKind.FixedPrice || order.expirationTime > 0, "Auction can not be infinite");
         require(order.basePrice > 0 || order.target != address(0), "Price can not be 0");
 
+        if (order.side == SaleKindInterface.Side.Buy) {
+            require(order.taker != address(0), "Can not transfer to zero address");      
+        }
+
         }
         return true;
     }
@@ -217,9 +275,9 @@ contract Marketplace is Ownable, ReentrancyGuard {
     //     return keccak256(abi.encode(order, nonce));
     // }
 
-    function incrementNonce(address user) private {
-        nonces[user] += 1;
-    }
+    // function incrementNonce(address user) private {
+    //     nonces[user] += 1;
+    // }
 
 }
 
@@ -249,7 +307,7 @@ library SaleKindInterface {
 
     enum Side { Buy, Sell }
 
-    enum SaleKind { FixedPrice, DutchAuction }
+    enum SaleKind { FixedPrice, DutchAuction, Buy }
 
     function validateParameters(SaleKind saleKind, uint expirationTime)
         pure
