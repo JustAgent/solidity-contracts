@@ -42,7 +42,6 @@ contract Sign {
     }
 
     function splitSignature(bytes memory _signature) public pure returns(bytes32 r, bytes32 s, uint8 v) {
-        // require(_signature.length == 65, "invalid signature length");
         assembly {
             r := mload(add(_signature, 32))
             s := mload(add(_signature, 64))
